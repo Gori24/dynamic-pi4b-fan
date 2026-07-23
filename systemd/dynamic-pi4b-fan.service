@@ -1,0 +1,16 @@
+[Unit]
+Description=dynamic Pi 4B fan control API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/gori/Projects/Private/dynamic-pi4b-fan
+Environment=DYNAMIC_PI4B_FAN_CONFIG=/etc/dynamic-pi4b-fan/config.toml
+ExecStart=/home/gori/Projects/Private/dynamic-pi4b-fan/.venv/bin/python -m dynamic_pi4b_fan
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

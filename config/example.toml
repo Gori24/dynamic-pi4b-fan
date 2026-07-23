@@ -1,0 +1,19 @@
+[server]
+host = "0.0.0.0"
+port = 8081
+auth_token = "changeme8"
+
+[fan]
+gpio_pin = 17
+temp_on_c = 60.0
+temp_off_c = 50.0
+poll_interval_seconds = 5
+min_allowed_temp_c = 35.0
+max_allowed_temp_c = 85.0
+initial_mode = "auto"
+
+[temperature]
+command = ["vcgencmd", "measure_temp"]
+
+[logging]
+level = "INFO"
