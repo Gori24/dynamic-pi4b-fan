@@ -4,8 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dynamic-pi4b-fan"
-version = "0.1.0"
+version = "1.0.0"
 description = "REST API service for Raspberry Pi fan control"
+readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
   "fastapi==0.139.2",

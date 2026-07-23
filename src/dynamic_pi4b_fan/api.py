@@ -38,7 +38,7 @@ def build_app(config: AppConfig) -> FastAPI:
         finally:
             controller.stop()
 
-    app = FastAPI(title="dynamic-pi4b-fan", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="dynamic-pi4b-fan", version="1.0.0", lifespan=lifespan)
 
     def verify_token(authorization: str | None = Header(default=None)) -> None:
         if authorization != f"Bearer {config.server.auth_token}":
