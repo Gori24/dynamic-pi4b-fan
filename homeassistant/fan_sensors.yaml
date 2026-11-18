@@ -1,0 +1,17 @@
+- platform: rest
+  name: Pi Fan Status
+  resource: http://127.0.0.1:8081/api/status
+  method: GET
+  headers:
+    Authorization: !secret pi_fan_api_auth
+  scan_interval: 15
+  value_template: "{{ value_json.temperature_c }}"
+  unit_of_measurement: "°C"
+  device_class: temperature
+  state_class: measurement
+  json_attributes:
+    - fan_on
+    - mode
+    - temp_on_c
+    - temp_off_c
+    - updated_at

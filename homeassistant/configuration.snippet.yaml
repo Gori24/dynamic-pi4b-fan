@@ -1,0 +1,4 @@
+# Add to /config/configuration.yaml (each top-level key only once!)
+sensor: !include fan_sensors.yaml
+rest_command: !include fan_rest_command.yaml
+template: !include fan_template.yaml

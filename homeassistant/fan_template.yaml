@@ -1,0 +1,60 @@
+# All controls read their state from sensor.pi_fan_status. After every change the
+# sensor is refreshed immediately, so the UI does not wait for the next poll.
+- select:
+    - name: "Pi Fan Mode"
+      unique_id: pi_fan_mode
+      availability: "{{ states('sensor.pi_fan_status') not in ['unavailable', 'unknown'] }}"
+      state: "{{ state_attr('sensor.pi_fan_status', 'mode') | default('auto') }}"
+      options: "{{ ['auto', 'forced_on', 'forced_off'] }}"
+      select_option:
+        - action: rest_command.set_pi_fan_mode
+          data:
+            mode: "{{ option }}"
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.pi_fan_status
+
+  number:
+    - name: "Pi Fan Temp On"
+      unique_id: pi_fan_temp_on_c_live
+      availability: "{{ states('sensor.pi_fan_status') not in ['unavailable', 'unknown'] }}"
+      state: "{{ state_attr('sensor.pi_fan_status', 'temp_on_c') | float(60) }}"
+      min: 40
+      max: 85
+      step: 0.5
+      unit_of_measurement: "°C"
+      set_value:
+        - variables:
+            current_off: "{{ state_attr('sensor.pi_fan_status', 'temp_off_c') | float(50) }}"
+        - variables:
+            # temp_on must stay above temp_off; clamp instead of failing
+            new_on: "{{ [value | float, current_off + 0.5] | max }}"
+        - action: rest_command.set_pi_fan_thresholds
+          data:
+            temp_on_c: "{{ new_on }}"
+            temp_off_c: "{{ current_off }}"
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.pi_fan_status
+
+    - name: "Pi Fan Temp Off"
+      unique_id: pi_fan_temp_off_c_live
+      availability: "{{ states('sensor.pi_fan_status') not in ['unavailable', 'unknown'] }}"
+      state: "{{ state_attr('sensor.pi_fan_status', 'temp_off_c') | float(50) }}"
+      min: 35
+      max: 80
+      step: 0.5
+      unit_of_measurement: "°C"
+      set_value:
+        - variables:
+            current_on: "{{ state_attr('sensor.pi_fan_status', 'temp_on_c') | float(60) }}"
+        - variables:
+            # temp_off must stay below temp_on; clamp instead of failing
+            new_off: "{{ [value | float, current_on - 0.5] | min }}"
+        - action: rest_command.set_pi_fan_thresholds
+          data:
+            temp_on_c: "{{ current_on }}"
+            temp_off_c: "{{ new_off }}"
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.pi_fan_status

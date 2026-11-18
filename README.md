@@ -38,6 +38,7 @@ Empfehlung: Parallel zum Lüfter eine Freilaufdiode (z. B. 1N4148 oder 1N4007, K
 - `src/dynamic_pi4b_fan/` - Anwendungscode (API, Steuerlogik, Konfiguration)
 - `config/example.toml` - Beispielkonfiguration
 - `systemd/dynamic-pi4b-fan.service` - systemd-Service
+- `homeassistant/` - Vorlagen für die Home-Assistant-Integration
 - `/etc/dynamic-pi4b-fan/config.toml` - produktive Konfiguration
 - `/etc/systemd/system/dynamic-pi4b-fan.service` - installierte Service-Unit
 
@@ -118,6 +119,32 @@ Fehlerfälle:
 - `422`: ungültiger Request, z. B. unbekannter Modus, `temp_off_c >= temp_on_c` oder Schwellwert außerhalb von `min_allowed_temp_c`/`max_allowed_temp_c`. Die Begründung steht im Feld `detail`.
 
 `temperature_c` ist `0.0`, solange noch keine Messung erfolgreich war (z. B. wenn `vcgencmd` beim Start fehlschlägt).
+
+## Home-Assistant-Integration
+
+Vorlagen liegen in `homeassistant/`. Home Assistant läuft auf demselben Pi mit `network_mode: host` und spricht die API daher über `http://127.0.0.1:8081` an.
+
+| Datei | Inhalt |
+|---|---|
+| `fan_sensors.yaml` | REST-Sensor `sensor.pi_fan_status` (pollt `/api/status` alle 15 s, Rest als Attribute) |
+| `fan_rest_command.yaml` | `rest_command.set_pi_fan_mode` und `rest_command.set_pi_fan_thresholds` |
+| `fan_template.yaml` | `select.pi_fan_mode`, `number.pi_fan_temp_on`, `number.pi_fan_temp_off` |
+| `secrets.example.yaml` | Eintrag `pi_fan_api_auth` für `/config/secrets.yaml` |
+| `configuration.snippet.yaml` | Includes für `/config/configuration.yaml` |
+
+Einrichtung:
+
+1. Die drei `fan_*.yaml` nach `/config/` (hier `~/homeassistant/config/`) kopieren.
+2. `pi_fan_api_auth: "Bearer <auth_token>"` in `secrets.yaml` eintragen. Das Token muss zu `server.auth_token` passen.
+3. Die Includes aus `configuration.snippet.yaml` übernehmen (jeden Top-Level-Schlüssel nur einmal).
+4. Konfiguration prüfen und HA neu starten:
+
+```bash
+docker exec homeassistant python -m homeassistant --script check_config -c /config
+docker restart homeassistant
+```
+
+Nach jeder Änderung über `select`/`number` wird `sensor.pi_fan_status` sofort aktualisiert (`homeassistant.update_entity`), damit die UI nicht bis zum nächsten Poll den alten Wert zeigt. Ungültige Kombinationen (`temp_on <= temp_off`) werden in HA auf einen Abstand von 0,5 °C begrenzt.
 
 ## Steuerlogik
 
