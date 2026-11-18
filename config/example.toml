@@ -10,7 +10,7 @@ temp_off_c = 50.0
 poll_interval_seconds = 5
 min_allowed_temp_c = 35.0
 max_allowed_temp_c = 85.0
-initial_mode = "auto"
+initial_mode = "auto"  # optional, default: auto
 
 [temperature]
 command = ["vcgencmd", "measure_temp"]

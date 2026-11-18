@@ -1,2 +1,9 @@
+from importlib.metadata import PackageNotFoundError, version
+
 __all__ = ["__version__"]
-__version__ = "0.1.0"
+
+try:
+    # Single source of truth: the version in pyproject.toml
+    __version__ = version("dynamic-pi4b-fan")
+except PackageNotFoundError:  # running from a source tree without installation
+    __version__ = "0.0.0+unknown"

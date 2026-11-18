@@ -3,14 +3,13 @@ from __future__ import annotations
 import logging
 import subprocess
 import threading
-import time
 from datetime import datetime
 from typing import Literal
 
 import RPi.GPIO as GPIO
 from pydantic import BaseModel
 
-from .config import AppConfig
+from .config import AppConfig, validate_thresholds
 
 FanMode = Literal["auto", "forced_on", "forced_off"]
 
@@ -29,7 +28,7 @@ class FanController:
         self._config = config
         self._logger = logging.getLogger("dynamic_pi4b_fan.controller")
         self._lock = threading.RLock()
-        self._running = False
+        self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._mode: FanMode = config.fan.initial_mode  # type: ignore[assignment]
         self._fan_on = False
@@ -43,18 +42,23 @@ class FanController:
 
     def start(self) -> None:
         with self._lock:
-            if self._running:
+            if self._thread is not None:
                 return
-            self._running = True
+            self._stop_event.clear()
+            # Run the first control step synchronously so the configured mode
+            # takes effect (and a real temperature is available) before the API
+            # starts serving requests.
+            self._tick()
             self._thread = threading.Thread(target=self._run_loop, daemon=True)
             self._thread.start()
 
     def stop(self) -> None:
-        with self._lock:
-            self._running = False
+        self._stop_event.set()
         if self._thread is not None:
             self._thread.join(timeout=10)
-        self._apply_output(False)
+            self._thread = None
+        with self._lock:
+            self._apply_output(False)
         GPIO.cleanup()
 
     def get_state(self) -> FanState:
@@ -83,12 +87,9 @@ class FanController:
 
     def set_thresholds(self, temp_on_c: float, temp_off_c: float) -> FanState:
         fan_cfg = self._config.fan
-        if temp_off_c >= temp_on_c:
-            raise ValueError("temp_off_c must be lower than temp_on_c")
-        if not (fan_cfg.min_allowed_temp_c <= temp_off_c <= fan_cfg.max_allowed_temp_c):
-            raise ValueError("temp_off_c outside allowed range")
-        if not (fan_cfg.min_allowed_temp_c <= temp_on_c <= fan_cfg.max_allowed_temp_c):
-            raise ValueError("temp_on_c outside allowed range")
+        validate_thresholds(
+            temp_on_c, temp_off_c, fan_cfg.min_allowed_temp_c, fan_cfg.max_allowed_temp_c
+        )
 
         with self._lock:
             fan_cfg.temp_on_c = temp_on_c
@@ -109,34 +110,33 @@ class FanController:
             capture_output=True,
             text=True,
             check=True,
+            timeout=5,
         )
         temp_str = result.stdout.strip()
         return float(temp_str.replace("temp=", "").replace("'C", ""))
 
     def _run_loop(self) -> None:
-        while True:
-            with self._lock:
-                if not self._running:
-                    return
+        interval = self._config.fan.poll_interval_seconds
+        while not self._stop_event.wait(interval):
+            self._tick()
 
-            try:
-                temp = self.get_temperature()
-            except Exception:
-                self._logger.exception("Temperature read failed")
-                time.sleep(self._config.fan.poll_interval_seconds)
-                continue
+    def _tick(self) -> None:
+        """Read the temperature once and apply the current mode."""
+        try:
+            temp = self.get_temperature()
+        except Exception:
+            self._logger.exception("Temperature read failed")
+            return
 
-            with self._lock:
-                self._temperature_c = temp
-                if self._mode == "auto":
-                    self._apply_auto_logic_locked(temp)
-                elif self._mode == "forced_on":
-                    self._apply_output(True)
-                elif self._mode == "forced_off":
-                    self._apply_output(False)
-                self._touch_locked()
-
-            time.sleep(self._config.fan.poll_interval_seconds)
+        with self._lock:
+            self._temperature_c = temp
+            if self._mode == "auto":
+                self._apply_auto_logic_locked(temp)
+            elif self._mode == "forced_on":
+                self._apply_output(True)
+            elif self._mode == "forced_off":
+                self._apply_output(False)
+            self._touch_locked()
 
     def _apply_auto_logic_locked(self, temp: float) -> None:
         if not self._fan_on and temp >= self._config.fan.temp_on_c:

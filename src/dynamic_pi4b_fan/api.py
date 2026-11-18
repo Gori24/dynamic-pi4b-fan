@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel
 
+from . import __version__
 from .config import AppConfig, load_config
 from .controller import FanController, FanMode
 
@@ -38,10 +40,11 @@ def build_app(config: AppConfig) -> FastAPI:
         finally:
             controller.stop()
 
-    app = FastAPI(title="dynamic-pi4b-fan", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="dynamic-pi4b-fan", version=__version__, lifespan=lifespan)
 
     def verify_token(authorization: str | None = Header(default=None)) -> None:
-        if authorization != f"Bearer {config.server.auth_token}":
+        expected = f"Bearer {config.server.auth_token}"
+        if authorization is None or not secrets.compare_digest(authorization, expected):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
 
     @app.get("/api/status", dependencies=[Depends(verify_token)])
@@ -68,7 +71,13 @@ def build_app(config: AppConfig) -> FastAPI:
 
     @app.post("/api/thresholds", dependencies=[Depends(verify_token)])
     def set_thresholds(payload: ThresholdRequest):
-        return controller.set_thresholds(payload.temp_on_c, payload.temp_off_c).model_dump()
+        try:
+            state = controller.set_thresholds(payload.temp_on_c, payload.temp_off_c)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+            ) from exc
+        return state.model_dump()
 
     return app
 

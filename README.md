@@ -10,6 +10,29 @@ Ziel ist ein einfacher, robuster Hintergrunddienst, der den Lüfter automatisch 
 
 Der Service läuft direkt auf dem Host, nicht in Docker. Für den GPIO-Zugriff auf den Lüfter-Pin sowie den Aufruf von `vcgencmd measure_temp` ist der direkte Hostzugriff einfacher und zuverlässiger als eine Containerisierung, die zusätzliche Device-Passthrough-Komplexität ohne fachlichen Mehrwert einführen würde.
 
+## Hardware
+
+Der Lüfter ist ein einfacher 2-Pin-Lüfter (5 V), der über einen NPN-Transistor als Low-Side-Schalter an GPIO 17 hängt:
+
+```
+ Pi 5V (Pin 2/4) ───────────── Lüfter rot (+)
+                               Lüfter schwarz (−)
+                                    │
+                                    C
+ GPIO 17 (Pin 11) ──[ R ]──── B   NPN
+                                    E
+                                    │
+ Pi GND (Pin 6) ────────────────────┘
+```
+
+- **GPIO 17 = HIGH** → Basisstrom fließt, Transistor leitet, Lüfter **an**.
+- **GPIO 17 = LOW** (oder Pin noch nicht konfiguriert, z. B. beim Booten) → Lüfter **aus**.
+- Der Basiswiderstand (typisch ca. 1 kΩ) begrenzt den Strom aus dem GPIO-Pin.
+
+Die Logik im Code (`HIGH` = an, Initialzustand `LOW`) passt zu dieser Schaltung.
+
+Empfehlung: Parallel zum Lüfter eine Freilaufdiode (z. B. 1N4148 oder 1N4007, Kathode an 5 V) schützt den Transistor vor Spannungsspitzen beim Abschalten des Motors. Bei einfachem An/Aus ist das unkritisch, bei häufigem Schalten (PWM) wird es wichtiger.
+
 ## Verzeichnislayout
 
 - `src/dynamic_pi4b_fan/` - Anwendungscode (API, Steuerlogik, Konfiguration)
@@ -29,13 +52,29 @@ python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-3. Eine produktive Konfiguration an `/etc/dynamic-pi4b-fan/config.toml` anlegen (Vorlage: `config/example.toml`).
-4. Die systemd-Datei nach `/etc/systemd/system/` kopieren und aktivieren:
+3. Eine produktive Konfiguration anlegen (Vorlage: `config/example.toml`) und `auth_token` auf einen zufälligen Wert setzen, z. B. mit `openssl rand -hex 32`. Da die Datei das Token im Klartext enthält und nur der Service (als `root`) sie lesen muss, wird sie auf `root` beschränkt:
+
+```bash
+sudo install -d -m 750 /etc/dynamic-pi4b-fan
+sudo install -m 600 config/example.toml /etc/dynamic-pi4b-fan/config.toml
+sudoedit /etc/dynamic-pi4b-fan/config.toml
+```
+
+4. Die systemd-Datei nach `/etc/systemd/system/` kopieren und aktivieren (liegt das Repository nicht unter `/home/gori/Projects/Private/dynamic-pi4b-fan`, vorher `WorkingDirectory` und `ExecStart` anpassen):
 
 ```bash
 sudo cp systemd/dynamic-pi4b-fan.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now dynamic-pi4b-fan.service
+```
+
+### Update
+
+```bash
+cd ~/Projects/Private/dynamic-pi4b-fan
+git pull
+.venv/bin/pip install -e .   # aktualisiert u. a. die Versionsnummer in den Paket-Metadaten
+sudo systemctl restart dynamic-pi4b-fan.service
 ```
 
 Wenn du die Anwendung unabhängig von der Unit testen willst, setze die Umgebungsvariable `DYNAMIC_PI4B_FAN_CONFIG` auf einen alternativen Konfigurationspfad und starte mit `python -m dynamic_pi4b_fan`.
@@ -52,7 +91,7 @@ Wichtige Felder:
 - `fan.temp_on_c` / `fan.temp_off_c`: Ein- bzw. Ausschaltschwelle (Hysterese, `temp_off_c` muss kleiner als `temp_on_c` sein)
 - `fan.poll_interval_seconds`: Abfrageintervall der Temperatur
 - `fan.min_allowed_temp_c` / `fan.max_allowed_temp_c`: Gültigkeitsbereich für Schwellwerte (auch bei Laufzeitänderung über die API)
-- `fan.initial_mode`: Startmodus (`auto`, `forced_on` oder `forced_off`)
+- `fan.initial_mode`: Startmodus (`auto`, `forced_on` oder `forced_off`, optional, Standard `auto`). Er greift sofort beim Start: Vor dem Hochfahren der API wird einmal die Temperatur gemessen und der Modus angewendet.
 - `temperature.command`: Befehl zur Temperaturmessung, standardmäßig `vcgencmd measure_temp`
 - `logging.level`: Log-Level des Services
 
@@ -72,6 +111,13 @@ Alle Endpunkte erfordern den Header `Authorization: Bearer <auth_token>`.
 | GET | `/api/thresholds` | Aktuelle Ein-/Ausschaltschwellen |
 | POST | `/api/fan` | Modus setzen (`auto`, `forced_on`, `forced_off`) |
 | POST | `/api/thresholds` | Schwellwerte zur Laufzeit ändern |
+
+Fehlerfälle:
+
+- `401`: fehlendes oder falsches Token
+- `422`: ungültiger Request, z. B. unbekannter Modus, `temp_off_c >= temp_on_c` oder Schwellwert außerhalb von `min_allowed_temp_c`/`max_allowed_temp_c`. Die Begründung steht im Feld `detail`.
+
+`temperature_c` ist `0.0`, solange noch keine Messung erfolgreich war (z. B. wenn `vcgencmd` beim Start fehlschlägt).
 
 ## Steuerlogik
 
@@ -97,10 +143,13 @@ curl -X POST -H "Authorization: Bearer <auth_token>" -H "Content-Type: applicati
 - Die Temperaturmessung erfolgt über `vcgencmd measure_temp`, was eine funktionierende Raspberry-Pi-Firmware voraussetzt.
 - Es gibt keine TLS-Terminierung im Service selbst; bei Zugriff außerhalb des lokalen Netzes sollte ein Reverse Proxy mit TLS vorgeschaltet werden.
 - Das Bearer-Token liegt im Klartext in der Konfigurationsdatei und muss entsprechend geschützt werden.
-- Schwellwertänderungen über die API sind nicht persistent und gehen bei einem Neustart des Services verloren.
+- Schwellwert- und Modusänderungen über die API sind bewusst nicht persistent. Nach einem Neustart des Services gelten wieder die Werte aus der Konfigurationsdatei.
 
 ## Vorschläge, nicht automatisch umgesetzt
 
-- Persistenz von Laufzeit-Schwellwertänderungen zurück in die Konfigurationsdatei.
 - Rate-Limiting für die API-Endpunkte.
 - Metriken-Export (z. B. Prometheus) für Temperaturverlauf und Schaltzyklen.
+
+## Versionierung
+
+Die Version wird ausschließlich in `pyproject.toml` gepflegt. Paket (`dynamic_pi4b_fan.__version__`) und API (`/openapi.json`, `/docs`) lesen sie aus den installierten Paket-Metadaten. Git-Tags tragen dieselbe Nummer ohne Präfix (z. B. `1.0.2`).
