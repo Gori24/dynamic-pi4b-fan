@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dynamic-pi4b-fan"
-version = "1.0.2"
+version = "1.1.0"
 description = "REST API service for Raspberry Pi fan control"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -15,6 +15,12 @@ dependencies = [
   "RPi.GPIO==0.7.1",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest==8.4.2",
+  "httpx==0.28.1",
+]
+
 [project.scripts]
 dynamic-pi4b-fan = "dynamic_pi4b_fan.__main__:main"
 
@@ -23,3 +29,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

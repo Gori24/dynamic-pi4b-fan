@@ -4,13 +4,29 @@ port = 8081
 auth_token = "changeme8"
 
 [fan]
-gpio_pin = 17
-temp_on_c = 60.0
+gpio_pin = 18                 # only used by the "onoff" backend
+temp_on_c = 60.0              # hysteresis, only used with idle_behavior = "off"
 temp_off_c = 50.0
 poll_interval_seconds = 5
 min_allowed_temp_c = 35.0
 max_allowed_temp_c = 85.0
-initial_mode = "auto"  # optional, default: auto
+initial_mode = "auto"         # auto | manual | off
+
+# auto mode: "min_duty" keeps the fan running at min_duty_percent when cool,
+# "off" switches it off below temp_off_c and on again at temp_on_c.
+idle_behavior = "min_duty"
+min_duty_percent = 30.0       # below this the fan whines / may stall
+manual_duty_percent = 50.0    # duty for mode "manual" until set via the API
+kick_duty_percent = 50.0      # short boost when starting from standstill
+kick_seconds = 1.0            # 0 disables the kick
+# [temperature °C, duty %], linearly interpolated, clamped at both ends
+curve = [[50.0, 30.0], [60.0, 45.0], [70.0, 65.0], [75.0, 100.0]]
+
+[pwm]
+backend = "hardware"          # hardware (sysfs, needs dtoverlay=pwm,pin=18,func=2) | onoff
+frequency_hz = 20000          # 20-25 kHz is inaudible; 100 Hz-10 kHz whines
+chip = 0                      # /sys/class/pwm/pwmchip<chip>
+channel = 0                   # GPIO 18 = PWM0 channel 0
 
 [temperature]
 command = ["vcgencmd", "measure_temp"]

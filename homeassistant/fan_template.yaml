@@ -1,11 +1,64 @@
 # All controls read their state from sensor.pi_fan_status. After every change the
 # sensor is refreshed immediately, so the UI does not wait for the next poll.
-- select:
+- fan:
+    # Main control, also exported to HomeKit. unique_id pi4b_fan keeps fan.pi4b_fan.
+    # On = auto mode, percentage = manual duty (0 % = off), preset "auto" = curve.
+    - name: "Pi4B Fan"
+      unique_id: pi4b_fan
+      availability: "{{ states('sensor.pi_fan_status') not in ['unavailable', 'unknown'] }}"
+      state: "{{ state_attr('sensor.pi_fan_status', 'fan_on') | default(false) }}"
+      percentage: "{{ state_attr('sensor.pi_fan_status', 'duty_percent') | int(0) }}"
+      preset_mode: "{{ 'auto' if state_attr('sensor.pi_fan_status', 'mode') == 'auto' else none }}"
+      preset_modes:
+        - auto
+      speed_count: 100
+      turn_on:
+        - if: "{{ (percentage | default(0, true) | int(0)) > 0 and (preset_mode | default(none)) != 'auto' }}"
+          then:
+            - action: rest_command.set_pi_fan_duty
+              data:
+                duty_percent: "{{ percentage }}"
+          else:
+            - action: rest_command.set_pi_fan_mode
+              data:
+                mode: auto
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.pi_fan_status
+      turn_off:
+        - action: rest_command.set_pi_fan_mode
+          data:
+            mode: "off"
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.pi_fan_status
+      set_percentage:
+        - if: "{{ percentage | int(0) == 0 }}"
+          then:
+            - action: rest_command.set_pi_fan_mode
+              data:
+                mode: "off"
+          else:
+            - action: rest_command.set_pi_fan_duty
+              data:
+                duty_percent: "{{ percentage }}"
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.pi_fan_status
+      set_preset_mode:
+        - action: rest_command.set_pi_fan_mode
+          data:
+            mode: auto
+        - action: homeassistant.update_entity
+          target:
+            entity_id: sensor.pi_fan_status
+
+  select:
     - name: "Pi Fan Mode"
       unique_id: pi_fan_mode
       availability: "{{ states('sensor.pi_fan_status') not in ['unavailable', 'unknown'] }}"
       state: "{{ state_attr('sensor.pi_fan_status', 'mode') | default('auto') }}"
-      options: "{{ ['auto', 'forced_on', 'forced_off'] }}"
+      options: "{{ ['auto', 'manual', 'off'] }}"
       select_option:
         - action: rest_command.set_pi_fan_mode
           data:
@@ -14,6 +67,7 @@
           target:
             entity_id: sensor.pi_fan_status
 
+  # Hysteresis thresholds: only used with idle_behavior = "off" in the service config.
   number:
     - name: "Pi Fan Temp On"
       unique_id: pi_fan_temp_on_c_live

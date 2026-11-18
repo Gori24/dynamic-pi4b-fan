@@ -6,9 +6,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import __version__
+from .backends import FanBackend
 from .config import AppConfig, load_config
 from .controller import FanController, FanMode
 
@@ -17,6 +18,8 @@ DEFAULT_CONFIG_PATH = Path("/etc/dynamic-pi4b-fan/config.toml")
 
 class FanModeRequest(BaseModel):
     mode: FanMode
+    # only with mode "manual"; values below min_duty_percent are raised to it
+    duty_percent: float | None = Field(default=None, ge=1, le=100)
 
 
 class ThresholdRequest(BaseModel):
@@ -28,8 +31,8 @@ def get_config_path() -> Path:
     return Path(os.environ.get("DYNAMIC_PI4B_FAN_CONFIG", DEFAULT_CONFIG_PATH))
 
 
-def build_app(config: AppConfig) -> FastAPI:
-    controller = FanController(config)
+def build_app(config: AppConfig, backend: FanBackend | None = None) -> FastAPI:
+    controller = FanController(config, backend)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -58,7 +61,7 @@ def build_app(config: AppConfig) -> FastAPI:
     @app.get("/api/fan", dependencies=[Depends(verify_token)])
     def get_fan():
         state = controller.get_state()
-        return {"fan_on": state.fan_on, "mode": state.mode}
+        return {"fan_on": state.fan_on, "mode": state.mode, "duty_percent": state.duty_percent}
 
     @app.get("/api/thresholds", dependencies=[Depends(verify_token)])
     def get_thresholds():
@@ -67,7 +70,13 @@ def build_app(config: AppConfig) -> FastAPI:
 
     @app.post("/api/fan", dependencies=[Depends(verify_token)])
     def set_fan(payload: FanModeRequest):
-        return controller.set_mode(payload.mode).model_dump()
+        try:
+            state = controller.set_mode(payload.mode, payload.duty_percent)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+            ) from exc
+        return state.model_dump()
 
     @app.post("/api/thresholds", dependencies=[Depends(verify_token)])
     def set_thresholds(payload: ThresholdRequest):

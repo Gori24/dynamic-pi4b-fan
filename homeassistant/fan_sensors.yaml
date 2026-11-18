@@ -11,7 +11,10 @@
   state_class: measurement
   json_attributes:
     - fan_on
+    - duty_percent
     - mode
     - temp_on_c
     - temp_off_c
+    - idle_behavior
+    - pwm_frequency_hz
     - updated_at

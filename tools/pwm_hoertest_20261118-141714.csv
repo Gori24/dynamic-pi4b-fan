@@ -1,0 +1,20 @@
+phase,freq_hz,duty,kick,runs,noise,speed,note,temp_c
+referenz,0,100,False,j,3,gleich,,46.7
+frequenz,10,50,True,j,1,kaum,hohes ticken,42.3
+frequenz,25,50,True,j,1,kaum,ticken,42.8
+frequenz,50,50,True,j,1,kaum,ticken etwas,40.4
+frequenz,100,50,True,j,1,kaum,etwas,39.4
+frequenz,200,50,True,j,1,kaum,,40.9
+frequenz,500,50,True,j,2,kaum,pfeiffen,39.9
+frequenz,1000,50,True,j,3,halb,pfeiffen,40.4
+tastgrad,200,80,False,j,3,gleich,,40.9
+tastgrad,200,60,False,j,2,halb,irgendetwas,39.9
+tastgrad,200,50,False,j,2,halb,irgendetwas,40.4
+tastgrad,200,40,False,j,2,halb,irgendetwas,38.9
+tastgrad,200,30,False,j,2,halb,irgendetwas,41.3
+tastgrad,200,20,False,j,1,kaum,irgendetwas,41.8
+tastgrad,200,15,False,j,1,kaum,irgendetwas,41.8
+anlauf,200,60,False,j,2,halb,irgendetwas,43.3
+anlauf,200,50,False,j,1,kaum,irgendetwas,41.3
+anlauf,200,40,False,j,1,kaum,irgendetwas,40.9
+anlauf,200,30,False,j,1,kaum,irgendetwas,40.9
